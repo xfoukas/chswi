@@ -15,6 +15,9 @@
 #include <ifaddrs.h>
 #include <signal.h>
 #include <err.h>
+#include <time.h>
+
+#define SUPPORTED_PROTO "IEEE 802.11bg"
 
 typedef struct apinf
 {
@@ -24,20 +27,36 @@ typedef struct apinf
 	struct apinf *next;
 } ap_info;
 
+typedef struct scanresult
+{
+	ap_info *ap_lists;
+	unsigned short num_of_channels;    /*Number of channels checked*/
+} scan_result;
+
+typedef struct chanload
+{
+	int channel;
+	float load;
+	time_t measure_time;
+	struct chanload *next;
+} channel_load;
 
 typedef struct chlist
 {
-	ap_info *list_by_channel;			/*List of the first channel*/
-	unsigned short num_of_channels;    /*Number of channels checked*/
-} channel_list;
+	channel_load *channels;
+	unsigned short num_of_channels;
+}channel_list;
+
 
 int ap_scan(int skfd,char *ifname,channel_list *lst);
 
-int get_channel_load(const char *ifname,unsigned int timeslot);
+int get_channel_load(int skfd,const char *ifname,unsigned int timeslot);
 
 int switch_mode(int skfd,char *ifname,int mode);
 
 void if_up_down(int skfd,const char *vname, int value);
+
+int check_proto_support(int skfd, const char *ifname);
 
 inline void terminate_monitor(int signum)
 {

@@ -52,11 +52,31 @@ const char * const operation_mode[] = { "Auto",
 	return (0);
 }*/
 
-int get_channel_load(const char *ifname,unsigned int timeslot)
+/*void get_initial_load(const char *ifname,unsigned int timeslot,void *ptr)
+{
+
+}*/
+
+int check_proto_support(int skfd, const char *ifname)
+{
+	struct iwreq wrq;
+	char name[IFNAMSIZ+1];
+	if(iw_get_ext(skfd, ifname, SIOCGIWNAME, &wrq) < 0)
+		/*If no wireless name : no wireless extensions*/
+		return(-1);
+	else {
+		strncpy(name, wrq.u.name, IFNAMSIZ);
+		name[IFNAMSIZ] = '\0';
+	}
+	return iw_protocol_compare(name,SUPPORTED_PROTO);
+}
+
+int get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 {
 	int load;
 	pcap_t *handle;
 	char errbuf[PCAP_ERRBUF_SIZE];
+	struct iwreq wrq;
 
 	/*Must be in monitor mode*/
 	if(iw_get_ext(skfd, ifname, SIOCGIWMODE, &wrq) >= 0){
@@ -115,12 +135,13 @@ if_up_down(int skfd,const char *vname, int value)
 
 int main(int argc, char **argv)
 {
-	/*int skfd;
-	channel_list lst;
+	int skfd;
+//	channel_list lst;
 	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
-	ap_scan(skfd,"wlan0",&lst);*/
+//	ap_scan(skfd,"wlan0",&lst);
+
 	return (0);
 }
