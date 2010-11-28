@@ -62,7 +62,6 @@ void terminate_monitor(int signum)
 
 int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 {
-	struct iwreq wrq;
 	int supports_a=0;
 	int supports_bg=0;
 	int i;
@@ -115,10 +114,8 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 				return (-1);
 			}
 			lst->channels[i].has_load=1;
-			memset( &wrq, 0, sizeof( struct iwreq ) );
-			iw_get_ext(skfd,ifname,SIOCGIWFREQ,&wrq);
-			printf("%f \n",iw_freq2float(&(wrq.u.freq)));
 			lst->channels[i].load=get_channel_load(skfd,ifname,timeslot);
+			lst->channels[i].measure_time=time(NULL);
 		}
 	}
 	return (1);
@@ -127,36 +124,14 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 int switch_channel(int skfd,const char *ifname,int channel){
 	struct iwreq wrq;
 	int res;
-//	if_up_down(skfd,ifname,-IFF_UP);
-//	iw_float2freq(freq, &(wrq.u.freq));
-//	memset( &wrq, 0, sizeof( struct iwreq ) );
-//	strncpy( wrq.ifr_name, ifname, IFNAMSIZ );
 	wrq.u.freq.m = (double) channel;
-//	wrq.u.freq.m = (double) 6;
 	wrq.u.freq.e = (double) 0;
 
-	/*if( ioctl( skfd, SIOCSIWFREQ, &wrq ) < 0 )
-	{
-		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
-		usleep( 10000 );  needs a second chance
-
-		if( ioctl( skfd, SIOCSIWFREQ, &wrq ) < 0 )
-		{
-			         perror( "ioctl(SIOCSIWFREQ) failed" );
-			res=-1;
-		}
-	}*/
-	/*if(iw_get_ext(skfd, ifname, SIOCGIWMODE, &wrq) >= 0){
-				if(wrq.u.mode!=2)
-					if (switch_mode(skfd,ifname,2)<0)
-						return (-1);
-	}*/
 	if(iw_set_ext(skfd, ifname, SIOCSIWFREQ, &wrq) < 0) {
 		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
 		res=-1;
 	}else
 		res=1;
-//	if_up_down(skfd,ifname,IFF_UP);
 	return res;
 }
 
@@ -174,9 +149,9 @@ int check_proto_support(int skfd,const char *ifname,const char *proto)
 	return iw_protocol_compare(name,proto);
 }
 
-int get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
+float get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 {
-	int load;
+	float load;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	struct iwreq wrq;
 
@@ -196,7 +171,7 @@ int get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 	signal(SIGALRM, terminate_monitor);
 	alarm(timeslot);
 	pcap_loop(handle,-1,got_packet,(u_char *)&load);
-
+	load=(100*load)/(MAX_RATE*timeslot);
 	return load;
 }
 
@@ -245,11 +220,13 @@ int main(int argc, char **argv)
 			perror("socket");
 			return -1;
 	}
-//	ap_scan(skfd,"wlan0",&lst);
-	get_initial_load(skfd,"wlan0",1,&lst);
+	get_initial_load(skfd,"wlan1",1,&lst);
 	for(i=0;i<lst.num_of_channels;i++){
 		if(lst.channels[i].has_load)
-			printf("%f \n",lst.channels[i].load);
+			printf("%f, time: %u \n",lst.channels[i].load,lst.channels[i].measure_time);
+
 	}
+	switch_mode(skfd,"wlan1",2);
+	iw_sockets_close(skfd);
 	return (0);
 }

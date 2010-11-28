@@ -20,10 +20,14 @@
 #ifdef SUPPORT_802_11_A
 #define SUPPORT_802_11A "IEEE 802.11a"
 #else
-#define SUPPORT_802_11A "no proto"
+#define SUPPORT_802_11A "no"
 #endif
 
 #define SUPPORT_802_11_BG "IEEE 802.11bg"
+
+#define MAX_RATE 54e6
+#define MIN_THRES (0.5*MAX_RATE)
+#define T_HOLD 10
 
 typedef struct apinf
 {
@@ -60,7 +64,7 @@ typedef struct chlist
 
 int ap_scan(int skfd,char *ifname,scan_result *lst);
 
-int get_channel_load(int skfd,const char *ifname,unsigned int timeslot);
+float get_channel_load(int skfd,const char *ifname,unsigned int timeslot);
 
 int
 get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst);
@@ -70,6 +74,10 @@ int switch_mode(int skfd,const char *ifname,int mode);
 void if_up_down(int skfd,const char *vname, int value);
 
 int check_proto_support(int skfd,const char *ifname,const char *proto);
+
+int switch_channel(int skfd,const char *ifname, int channel);
+
+
 
 static inline int channel_support(float freq,int supports_a){
 	int divisor;
@@ -86,12 +94,8 @@ static inline int channel_support(float freq,int supports_a){
 	return (-1);
 }
 
-int switch_channel(int skfd,const char *ifname, int channel);
-
-
-
 inline void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
-	(*((int *)args))++;
+	(*((float *)args))+=header->len;
 }
 #endif /* CHSWI_H_ */
