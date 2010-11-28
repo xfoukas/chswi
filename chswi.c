@@ -17,6 +17,14 @@ const char * const operation_mode[] = { "Auto",
 					"Monitor",
 					"Unknown/bug" };
 
+pcap_t *handle;
+
+void terminate_monitor(int signum)
+{
+   pcap_breakloop(handle);
+   pcap_close(handle);
+}
+
 /*int ap_scan(int skfd,char *ifname,channel_list *lst)
 {
 	struct iwreq wrq;
@@ -52,12 +60,107 @@ const char * const operation_mode[] = { "Auto",
 	return (0);
 }*/
 
-/*void get_initial_load(const char *ifname,unsigned int timeslot,void *ptr)
+int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 {
+	struct iwreq wrq;
+	int supports_a=0;
+	int supports_bg=0;
+	int i;
+	channel_load *prev;
+	struct iw_range range;
 
-}*/
+	if(check_proto_support(skfd,ifname,SUPPORT_802_11_BG)!=1) {
+		fprintf(stderr,"Protocol %s is not supported",SUPPORT_802_11_BG);
+		return (-1);
+	} else
+		supports_bg=1;
 
-int check_proto_support(int skfd, const char *ifname)
+	if(check_proto_support(skfd,ifname,SUPPORT_802_11A)==1)
+		supports_a=1;
+
+	/*Find available channels*/
+	if(iw_get_range_info(skfd,ifname,&range)<0) {
+		 fprintf(stderr, "%-8.16s  no frequency information.\n\n",
+				      ifname);
+		 return (-1);
+	}
+	else
+	lst->num_of_channels=0;
+	lst->channels=malloc(range.num_channels*sizeof(channel_load));
+	memset(lst->channels,0,range.num_channels*sizeof(channel_load));
+
+
+	for(i=0;i<range.num_channels;i++){
+		if(channel_support(iw_freq2float(&(range.freq[i])),supports_a)==1){
+			lst->channels[i].has_channel=1;
+			lst->channels[i].channel=range.freq[i].i;
+			lst->channels[i].freq=iw_freq2float(&(range.freq[i]));
+			lst->num_of_channels++;
+			lst->channels[i].has_next=0;
+			lst->channels[i].next=NULL;
+			if(lst->num_of_channels>1){
+				prev->has_next=1;
+				prev->next=&(lst->channels[i]);
+			}
+			prev=&(lst->channels[i]);
+		}
+	}
+
+	lst->channels=realloc(lst->channels,
+			(lst->num_of_channels)*sizeof(channel_load));
+
+	for(i=0;i<lst->num_of_channels;i++){
+		if(lst->channels[i].has_channel) {
+			if(switch_channel(skfd,ifname,lst->channels[i].channel)==-1){
+				return (-1);
+			}
+			lst->channels[i].has_load=1;
+			memset( &wrq, 0, sizeof( struct iwreq ) );
+			iw_get_ext(skfd,ifname,SIOCGIWFREQ,&wrq);
+			printf("%f \n",iw_freq2float(&(wrq.u.freq)));
+			lst->channels[i].load=get_channel_load(skfd,ifname,timeslot);
+		}
+	}
+	return (1);
+}
+
+int switch_channel(int skfd,const char *ifname,int channel){
+	struct iwreq wrq;
+	int res;
+//	if_up_down(skfd,ifname,-IFF_UP);
+//	iw_float2freq(freq, &(wrq.u.freq));
+//	memset( &wrq, 0, sizeof( struct iwreq ) );
+//	strncpy( wrq.ifr_name, ifname, IFNAMSIZ );
+	wrq.u.freq.m = (double) channel;
+//	wrq.u.freq.m = (double) 6;
+	wrq.u.freq.e = (double) 0;
+
+	/*if( ioctl( skfd, SIOCSIWFREQ, &wrq ) < 0 )
+	{
+		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
+		usleep( 10000 );  needs a second chance
+
+		if( ioctl( skfd, SIOCSIWFREQ, &wrq ) < 0 )
+		{
+			         perror( "ioctl(SIOCSIWFREQ) failed" );
+			res=-1;
+		}
+	}*/
+	/*if(iw_get_ext(skfd, ifname, SIOCGIWMODE, &wrq) >= 0){
+				if(wrq.u.mode!=2)
+					if (switch_mode(skfd,ifname,2)<0)
+						return (-1);
+	}*/
+	if(iw_set_ext(skfd, ifname, SIOCSIWFREQ, &wrq) < 0) {
+		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
+		res=-1;
+	}else
+		res=1;
+//	if_up_down(skfd,ifname,IFF_UP);
+	return res;
+}
+
+int check_proto_support(int skfd,const char *ifname,const char *proto)
 {
 	struct iwreq wrq;
 	char name[IFNAMSIZ+1];
@@ -68,13 +171,12 @@ int check_proto_support(int skfd, const char *ifname)
 		strncpy(name, wrq.u.name, IFNAMSIZ);
 		name[IFNAMSIZ] = '\0';
 	}
-	return iw_protocol_compare(name,SUPPORTED_PROTO);
+	return iw_protocol_compare(name,proto);
 }
 
 int get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 {
 	int load;
-	pcap_t *handle;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	struct iwreq wrq;
 
@@ -98,7 +200,7 @@ int get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 	return load;
 }
 
-int switch_mode(int skfd,char *ifname,int mode)
+int switch_mode(int skfd,const char *ifname,int mode)
 {
 	struct iwreq wrq;
 	int res;
@@ -135,13 +237,19 @@ if_up_down(int skfd,const char *vname, int value)
 
 int main(int argc, char **argv)
 {
-	int skfd;
+	int skfd,i;
+	channel_list lst;
+//	channel_load * load;
 //	channel_list lst;
 	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
 //	ap_scan(skfd,"wlan0",&lst);
-
+	get_initial_load(skfd,"wlan0",1,&lst);
+	for(i=0;i<lst.num_of_channels;i++){
+		if(lst.channels[i].has_load)
+			printf("%f \n",lst.channels[i].load);
+	}
 	return (0);
 }

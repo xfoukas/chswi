@@ -17,7 +17,13 @@
 #include <err.h>
 #include <time.h>
 
-#define SUPPORTED_PROTO "IEEE 802.11bg"
+#ifdef SUPPORT_802_11_A
+#define SUPPORT_802_11A "IEEE 802.11a"
+#else
+#define SUPPORT_802_11A "no proto"
+#endif
+
+#define SUPPORT_802_11_BG "IEEE 802.11bg"
 
 typedef struct apinf
 {
@@ -30,12 +36,16 @@ typedef struct apinf
 typedef struct scanresult
 {
 	ap_info *ap_lists;
-	unsigned short num_of_channels;    /*Number of channels checked*/
+	int num_of_channels;    /*Number of channels checked*/
 } scan_result;
 
 typedef struct chanload
 {
+	int has_channel;
+	int has_load;
+	int has_next;
 	int channel;
+	float freq;
 	float load;
 	time_t measure_time;
 	struct chanload *next;
@@ -48,21 +58,37 @@ typedef struct chlist
 }channel_list;
 
 
-int ap_scan(int skfd,char *ifname,channel_list *lst);
+int ap_scan(int skfd,char *ifname,scan_result *lst);
 
 int get_channel_load(int skfd,const char *ifname,unsigned int timeslot);
 
-int switch_mode(int skfd,char *ifname,int mode);
+int
+get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst);
+
+int switch_mode(int skfd,const char *ifname,int mode);
 
 void if_up_down(int skfd,const char *vname, int value);
 
-int check_proto_support(int skfd, const char *ifname);
+int check_proto_support(int skfd,const char *ifname,const char *proto);
 
-inline void terminate_monitor(int signum)
-{
-//   pcap_breakloop(handle);
-//   pcap_close(handle);
+static inline int channel_support(float freq,int supports_a){
+	int divisor;
+	float nfreq;
+	if(freq>=GIGA)
+		divisor=GIGA;
+	else
+		divisor=-1;
+	nfreq=freq/divisor;
+	if(nfreq>=2.4&&nfreq<2.5)
+		return (1);
+	else if(supports_a==1&&nfreq>5&&nfreq<5.7)
+		return (1);
+	return (-1);
 }
+
+int switch_channel(int skfd,const char *ifname, int channel);
+
+
 
 inline void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
