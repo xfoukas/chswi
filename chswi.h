@@ -28,6 +28,7 @@
 #define MAX_RATE 54e6
 #define MIN_THRES (0.5*MAX_RATE)
 #define T_HOLD 10
+#define FILTER_CONSTANT (T_HOLD/(T_HOLD+1))
 
 typedef struct apinf
 {
@@ -76,6 +77,8 @@ void if_up_down(int skfd,const char *vname, int value);
 int check_proto_support(int skfd,const char *ifname,const char *proto);
 
 int switch_channel(int skfd,const char *ifname, int channel);
+
+int is_outdated(channel_list *lst);
 
 
 

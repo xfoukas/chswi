@@ -210,12 +210,25 @@ if_up_down(int skfd,const char *vname, int value)
 		err(EXIT_FAILURE, "SIOCSIFFLAGS");
 }
 
+int is_outdated(channel_list *lst)
+{
+	int i;
+	time_t now;
+	now=time(NULL);
+	for(i=0;i<lst->num_of_channels;i++){
+		if(lst->channels[i].has_load==1){
+			if((now-lst->channels[i].measure_time)>
+				2*T_HOLD*lst->num_of_channels)
+				return 1;
+		}
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int skfd,i;
 	channel_list lst;
-//	channel_load * load;
-//	channel_list lst;
 	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
