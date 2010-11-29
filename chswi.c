@@ -6,6 +6,7 @@
  *      		p3070185@dias.aueb.gr
  */
 
+#include <err.h>
 #include "chswi.h"
 
 const char * const operation_mode[] = { "Auto",
@@ -25,40 +26,6 @@ void terminate_monitor(int signum)
    pcap_close(handle);
 }
 
-/*int ap_scan(int skfd,char *ifname,channel_list *lst)
-{
-	struct iwreq wrq;
-	struct iw_range range;
-	ap_info *ap_array;
-	wireless_scan_head cont;
-	wireless_scan *scan;
-	char name[IFNAMSIZ+1];
-
-	memset((char*) lst,0,sizeof(channel_list));
-
-
-	if(iw_get_ext(skfd, ifname, SIOCGIWNAME, &wrq) < 0)
-	     If no wireless name : no wireless extensions
-		return(-1);
-	else {
-		strncpy(name, wrq.u.name, IFNAMSIZ);
-		name[IFNAMSIZ] = '\0';
-	}
-
-	Make sure interface is in managed mode
-	 * or else change it so we can scan
-
-	if(iw_get_ext(skfd, ifname, SIOCGIWMODE, &wrq) >= 0){
-		if(wrq.u.mode!=2)
-			if (switch_mode(skfd,ifname,2)<0)
-				return (-1);
-	}
-
-	if(iw_scan(skfd,ifname,iw_get_kernel_we_version(),&cont)<0)
-			return (-1);
-	scan=cont.result;
-	return (0);
-}*/
 
 int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 {
@@ -225,20 +192,97 @@ int is_outdated(channel_list *lst)
 	return 0;
 }
 
+channel_load* find_oldest(channel_list *lst)
+{
+	channel_load *oldest;
+	int i;
+	oldest=lst->channels;
+	for(i=0;i<lst->num_of_channels;i++){
+		if(lst->channels[i].measure_time<oldest->measure_time)
+			oldest=&(lst->channels[i]);
+	}
+	return oldest;
+}
+
+void find_less_congested(channel_list *lst,channel_load **less_cong,
+		channel_load **second_less)
+{
+	int i;
+	*less_cong=lst->channels;
+	*second_less=lst->channels;
+	for(i=0;i<lst->num_of_channels;i++){
+		if(lst->channels[i].load<(*less_cong)->load)
+			*less_cong=&(lst->channels[i]);
+		if(lst->channels[i].load<(*second_less)->load)
+			*second_less=&(lst->channels[i]);
+	}
+}
+
+
+void channel_selection(int skfd,const char *ifname)
+{
+	channel_list lst;
+	channel_load ch,*less_cong,*second_less;
+	channel_load *ch_old;
+	float curr_thres,chan_load;
+	int curr_channel,i;
+	get_initial_load(skfd,ifname,INITIAL_HOLD,&lst);
+	curr_thres=MIN_THRES;
+	srand(time(NULL));
+	curr_channel=6;//(rand()%(lst.num_of_channels-1))+1;
+	switch_channel(skfd,ifname,curr_channel);
+	printf("Switched to channel %d\n",curr_channel);
+	/*TODO must change interface of ap also*/
+	while(1){
+		chan_load=get_channel_load(skfd,ifname,T_HOLD);
+		for(i=0;i<lst.num_of_channels;i++){
+			if(lst.channels[i].has_channel==1){
+				if(lst.channels[i].channel==curr_channel){
+					ch=lst.channels[i];
+					break;
+				}
+			}
+		}
+		ch.load=((1-FILTER_CONSTANT)*chan_load)+
+				((FILTER_CONSTANT)*ch.load);
+		printf("Channel load %f\n",ch.load);
+		printf("Current load %f\n",curr_thres);
+		if(ch.load>curr_thres){
+			if(is_outdated(&lst)){
+				ch_old=find_oldest(&lst);
+				curr_channel=ch_old->channel;
+				switch_channel(skfd,ifname,curr_channel);
+				printf("Switched to channel old%d\n",curr_channel);
+				/*TODO must change interface of ap also*/
+				curr_thres=MIN_THRES;
+			} else{
+				find_less_congested(&lst,&less_cong,&second_less);
+				printf("Less cong %d\n",less_cong->channel);
+				curr_channel=less_cong->channel;
+				switch_channel(skfd,ifname,curr_channel);
+				printf("Switched to channel not old %d\n",curr_channel);
+				/*TODO must change interface of ap also*/
+				curr_thres=second_less->load;
+			}
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
-	int skfd,i;
-	channel_list lst;
+	int skfd;
+//	int i;
 	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
-	get_initial_load(skfd,"wlan1",1,&lst);
+	channel_selection(skfd,"wlan1");
+	/*get_initial_load(skfd,"wlan1",1,&lst);
 	for(i=0;i<lst.num_of_channels;i++){
 		if(lst.channels[i].has_load)
 			printf("%f, time: %u \n",lst.channels[i].load,lst.channels[i].measure_time);
 
-	}
+	}*/
 	switch_mode(skfd,"wlan1",2);
 	iw_sockets_close(skfd);
 	return (0);

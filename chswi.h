@@ -14,7 +14,6 @@
 #include <pcap.h>
 #include <ifaddrs.h>
 #include <signal.h>
-#include <err.h>
 #include <time.h>
 
 #ifdef SUPPORT_802_11_A
@@ -26,9 +25,11 @@
 #define SUPPORT_802_11_BG "IEEE 802.11bg"
 
 #define MAX_RATE 54e6
-#define MIN_THRES (0.5*MAX_RATE)
+#define MIN_RATE (0.02*MAX_RATE)
+#define MIN_THRES MIN_RATE/MAX_RATE
 #define T_HOLD 10
-#define FILTER_CONSTANT (T_HOLD/(T_HOLD+1))
+#define INITIAL_HOLD 1
+#define FILTER_CONSTANT ((float)T_HOLD/(T_HOLD+1))
 
 typedef struct apinf
 {
@@ -79,6 +80,13 @@ int check_proto_support(int skfd,const char *ifname,const char *proto);
 int switch_channel(int skfd,const char *ifname, int channel);
 
 int is_outdated(channel_list *lst);
+
+void channel_selection(int skfd,const char *ifname);
+
+channel_load* find_oldest(channel_list *lst);
+
+void find_less_congested(channel_list *lst,channel_load **less_cong,
+		channel_load **second_less);
 
 
 
