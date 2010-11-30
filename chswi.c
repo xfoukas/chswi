@@ -9,14 +9,6 @@
 #include <err.h>
 #include "chswi.h"
 
-const char * const operation_mode[] = { "Auto",
-					"Ad-Hoc",
-					"Managed",
-					"Master",
-					"Repeater",
-					"Secondary",
-					"Monitor",
-					"Unknown/bug" };
 
 pcap_t *handle;
 
@@ -228,25 +220,46 @@ void channel_selection(int skfd,const char *ifname)
 	channel_list lst;
 	channel_load ch,*less_cong,*second_less;
 	channel_load *ch_old;
-	float curr_thres,chan_load;
+	float curr_thres,chan_load,load_total,rnd;
+	float *total_so_far;
 	int curr_channel,i;
+	load_total=0;
 	get_initial_load(skfd,ifname,INITIAL_HOLD,&lst);
+	total_so_far=malloc(lst.num_of_channels*sizeof(float));
 	curr_thres=MIN_THRES;
+	for(i=0;i<lst.num_of_channels;i++){
+		if(lst.channels[i].has_load==1){
+			if(lst.channels[i].load!=0)
+				load_total+=(1/lst.channels[i].load);
+			else
+				load_total+=1/10e-6;
+			total_so_far[i]=load_total;
+		}
+	}
 	srand(time(NULL));
-	curr_channel=(rand()%(lst.num_of_channels-1))+1;
+//	curr_channel=(rand()%(lst.num_of_channels-1))+1;
+	rnd=(rand()/(RAND_MAX+1.0))*load_total;
+	i=0;
+	for(;i<lst.num_of_channels;i++){
+		if(rnd<total_so_far[i])
+			break;
+	}
+	curr_channel=lst.channels[i].channel;
+	ch=lst.channels[i];
+	free(total_so_far);
 	switch_channel(skfd,ifname,curr_channel);
-	printf("Switched to channel %d\n",curr_channel);
 	/*TODO must change interface of ap also*/
-	while(1){
-		chan_load=get_channel_load(skfd,ifname,T_HOLD);
-		for(i=0;i<lst.num_of_channels;i++){
-			if(lst.channels[i].has_channel==1){
-				if(lst.channels[i].channel==curr_channel){
-					ch=lst.channels[i];
-					break;
-				}
+	printf("Switched to channel %d\n",curr_channel);
+/*	for(i=0;i<lst.num_of_channels;i++){
+		if(lst.channels[i].has_channel==1){
+			if(lst.channels[i].channel==curr_channel){
+				ch=lst.channels[i];
+				break;
 			}
 		}
+	}*/
+	while(1){
+		chan_load=get_channel_load(skfd,ifname,T_HOLD);
 		ch.measure_time=time(NULL);
 		ch.load=((1-FILTER_CONSTANT)*chan_load)+
 				((FILTER_CONSTANT)*ch.load);
@@ -256,6 +269,7 @@ void channel_selection(int skfd,const char *ifname)
 			if(is_outdated(&lst)){
 				ch_old=find_oldest(&lst);
 				curr_channel=ch_old->channel;
+				ch=*ch_old;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel old%d\n",curr_channel);
 				/*TODO must change interface of ap also*/
@@ -264,6 +278,7 @@ void channel_selection(int skfd,const char *ifname)
 				find_less_congested(&lst,&less_cong,&second_less);
 				printf("Less cong %d\n",less_cong->channel);
 				curr_channel=less_cong->channel;
+				ch=*less_cong;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel not old %d\n",curr_channel);
 				/*TODO must change interface of ap also*/
@@ -276,19 +291,12 @@ void channel_selection(int skfd,const char *ifname)
 int main(int argc, char **argv)
 {
 	int skfd;
-//	int i;
 	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
-	channel_selection(skfd,"wlan0");
-	/*get_initial_load(skfd,"wlan1",1,&lst);
-	for(i=0;i<lst.num_of_channels;i++){
-		if(lst.channels[i].has_load)
-			printf("%f, time: %u \n",lst.channels[i].load,lst.channels[i].measure_time);
-
-	}*/
-	switch_mode(skfd,"wlan0",2);
+	channel_selection(skfd,"wlan1");
+	switch_mode(skfd,"wlan1",2);
 	iw_sockets_close(skfd);
 	return (0);
 }
