@@ -25,7 +25,7 @@
 #define SUPPORT_802_11_BG "IEEE 802.11bg"
 
 #define MAX_RATE 54e6
-#define MIN_RATE (0.02*MAX_RATE)
+#define MIN_RATE (0.2*MAX_RATE)
 #define MIN_THRES MIN_RATE/MAX_RATE
 #define T_HOLD 10
 #define INITIAL_HOLD 1

@@ -208,13 +208,17 @@ void find_less_congested(channel_list *lst,channel_load **less_cong,
 		channel_load **second_less)
 {
 	int i;
+	float second_less_load=1;
 	*less_cong=lst->channels;
-	*second_less=lst->channels;
+	*second_less=NULL;
 	for(i=0;i<lst->num_of_channels;i++){
 		if(lst->channels[i].load<(*less_cong)->load)
 			*less_cong=&(lst->channels[i]);
-		if(lst->channels[i].load<(*second_less)->load)
+		if(lst->channels[i].load<second_less_load
+				&&lst->channels[i].load!=0){
 			*second_less=&(lst->channels[i]);
+			second_less_load=lst->channels[i].load;
+		}
 	}
 }
 
@@ -229,7 +233,7 @@ void channel_selection(int skfd,const char *ifname)
 	get_initial_load(skfd,ifname,INITIAL_HOLD,&lst);
 	curr_thres=MIN_THRES;
 	srand(time(NULL));
-	curr_channel=6;//(rand()%(lst.num_of_channels-1))+1;
+	curr_channel=(rand()%(lst.num_of_channels-1))+1;
 	switch_channel(skfd,ifname,curr_channel);
 	printf("Switched to channel %d\n",curr_channel);
 	/*TODO must change interface of ap also*/
@@ -243,6 +247,7 @@ void channel_selection(int skfd,const char *ifname)
 				}
 			}
 		}
+		ch.measure_time=time(NULL);
 		ch.load=((1-FILTER_CONSTANT)*chan_load)+
 				((FILTER_CONSTANT)*ch.load);
 		printf("Channel load %f\n",ch.load);
@@ -276,14 +281,14 @@ int main(int argc, char **argv)
 			perror("socket");
 			return -1;
 	}
-	channel_selection(skfd,"wlan1");
+	channel_selection(skfd,"wlan0");
 	/*get_initial_load(skfd,"wlan1",1,&lst);
 	for(i=0;i<lst.num_of_channels;i++){
 		if(lst.channels[i].has_load)
 			printf("%f, time: %u \n",lst.channels[i].load,lst.channels[i].measure_time);
 
 	}*/
-	switch_mode(skfd,"wlan1",2);
+	switch_mode(skfd,"wlan0",2);
 	iw_sockets_close(skfd);
 	return (0);
 }
