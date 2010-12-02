@@ -85,8 +85,9 @@ int switch_channel(int skfd,const char *ifname,int channel){
 	int res;
 	wrq.u.freq.m = (double) channel;
 	wrq.u.freq.e = (double) 0;
-
-	if(iw_set_ext(skfd, ifname, SIOCSIWFREQ, &wrq) < 0) {
+	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
+	if(ioctl(skfd,SIOCSIWFREQ,&wrq)<0){
+//	if(iw_set_ext(skfd, ifname, SIOCSIWFREQ, &wrq) < 0) {
 		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
 		res=-1;
 	}else
@@ -98,7 +99,9 @@ int check_proto_support(int skfd,const char *ifname,const char *proto)
 {
 	struct iwreq wrq;
 	char name[IFNAMSIZ+1];
-	if(iw_get_ext(skfd, ifname, SIOCGIWNAME, &wrq) < 0)
+
+	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
+	if(ioctl(skfd, SIOCGIWNAME, &wrq) < 0)
 		/*If no wireless name : no wireless extensions*/
 		return(-1);
 	else {
@@ -114,8 +117,9 @@ float get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 	char errbuf[PCAP_ERRBUF_SIZE];
 	struct iwreq wrq;
 
+	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
 	/*Must be in monitor mode*/
-	if(iw_get_ext(skfd, ifname, SIOCGIWMODE, &wrq) >= 0){
+	if(ioctl(skfd,SIOCGIWMODE,&wrq) >= 0){
 			if(wrq.u.mode!=6)
 				if (switch_mode(skfd,ifname,6)<0)
 					return (-1);
@@ -140,7 +144,9 @@ int switch_mode(int skfd,const char *ifname,int mode)
 	int res;
 	if_up_down(skfd,ifname,-IFF_UP);
 	wrq.u.mode=mode;
-	res=iw_set_ext(skfd,ifname,SIOCSIWMODE,&wrq);
+	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
+	res=ioctl(skfd,SIOCSIWMODE,&wrq);
+//	res=iw_set_ext(skfd,ifname,SIOCSIWMODE,&wrq);
 	if_up_down(skfd,ifname,IFF_UP);
 	/*mode change failed but we first had to bring
 		the interface back up*/
@@ -288,15 +294,36 @@ void channel_selection(int skfd,const char *ifname)
 	}
 }
 
+int
+sockets_open(void)
+{
+  static const int families[] = {
+    AF_INET, AF_IPX, AF_AX25, AF_APPLETALK
+  };
+  unsigned int	i;
+  int		sock;
+
+  /* Try all families we support */
+  for(i = 0; i < sizeof(families)/sizeof(int); ++i)
+    {
+      /* Try to open the socket, if success returns it */
+      sock = socket(families[i], SOCK_DGRAM, 0);
+      if(sock >= 0)
+	return sock;
+  }
+
+  return -1;
+}
+
 int main(int argc, char **argv)
 {
 	int skfd;
-	if((skfd=iw_sockets_open())<0){
+	if((skfd=sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
 	channel_selection(skfd,"wlan1");
 	switch_mode(skfd,"wlan1",2);
-	iw_sockets_close(skfd);
+	sockets_close(skfd);
 	return (0);
 }

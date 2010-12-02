@@ -63,6 +63,7 @@ typedef struct chlist
 	unsigned short num_of_channels;
 }channel_list;
 
+int sockets_open(void);
 
 int ap_scan(int skfd,char *ifname,scan_result *lst);
 
@@ -88,7 +89,10 @@ channel_load* find_oldest(channel_list *lst);
 void find_less_congested(channel_list *lst,channel_load **less_cong,
 		channel_load **second_less);
 
-
+static inline void sockets_close(int skfd)
+{
+	close(skfd);
+}
 
 static inline int channel_support(float freq,int supports_a){
 	int divisor;
