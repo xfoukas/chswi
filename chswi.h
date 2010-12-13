@@ -15,6 +15,7 @@
 #include <ifaddrs.h>
 #include <signal.h>
 #include <time.h>
+#include <math.h>
 
 #ifdef SUPPORT_802_11_A
 #define SUPPORT_802_11A "IEEE 802.11a"
@@ -82,17 +83,18 @@ int switch_channel(int skfd,const char *ifname, int channel);
 
 int is_outdated(channel_list *lst);
 
-void channel_selection(int skfd,const char *ifname);
+void channel_selection(int skfd,const char *ifname,char *ap_ifname);
+
+int switch_ap_channel(char *ifname,int channel);
 
 channel_load* find_oldest(channel_list *lst);
 
 void find_less_congested(channel_list *lst,channel_load **less_cong,
 		channel_load **second_less);
 
-static inline void sockets_close(int skfd)
-{
-	close(skfd);
-}
+int get_range_info(int		skfd, const char *	ifname,
+		  iwrange *	range);
+
 
 static inline int channel_support(float freq,int supports_a){
 	int divisor;
@@ -108,6 +110,7 @@ static inline int channel_support(float freq,int supports_a){
 		return (1);
 	return (-1);
 }
+
 
 inline void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){

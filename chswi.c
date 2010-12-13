@@ -221,7 +221,7 @@ void find_less_congested(channel_list *lst,channel_load **less_cong,
 }
 
 
-void channel_selection(int skfd,const char *ifname)
+void channel_selection(int skfd,const char *ifname,char *ap_ifname)
 {
 	channel_list lst;
 	channel_load ch,*less_cong,*second_less;
@@ -254,6 +254,7 @@ void channel_selection(int skfd,const char *ifname)
 	ch=lst.channels[i];
 	free(total_so_far);
 	switch_channel(skfd,ifname,curr_channel);
+	switch_ap_channel(ap_ifname,curr_channel);
 	/*TODO must change interface of ap also*/
 	printf("Switched to channel %d\n",curr_channel);
 /*	for(i=0;i<lst.num_of_channels;i++){
@@ -278,6 +279,7 @@ void channel_selection(int skfd,const char *ifname)
 				ch=*ch_old;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel old%d\n",curr_channel);
+				switch_ap_channel(ap_ifname,curr_channel);
 				/*TODO must change interface of ap also*/
 				curr_thres=MIN_THRES;
 			} else{
@@ -287,6 +289,7 @@ void channel_selection(int skfd,const char *ifname)
 				ch=*less_cong;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel not old %d\n",curr_channel);
+				switch_ap_channel(ap_ifname,curr_channel);
 				/*TODO must change interface of ap also*/
 				curr_thres=second_less->load;
 			}
@@ -294,36 +297,26 @@ void channel_selection(int skfd,const char *ifname)
 	}
 }
 
-int
-sockets_open(void)
-{
-  static const int families[] = {
-    AF_INET, AF_IPX, AF_AX25, AF_APPLETALK
-  };
-  unsigned int	i;
-  int		sock;
-
-  /* Try all families we support */
-  for(i = 0; i < sizeof(families)/sizeof(int); ++i)
-    {
-      /* Try to open the socket, if success returns it */
-      sock = socket(families[i], SOCK_DGRAM, 0);
-      if(sock >= 0)
-	return sock;
-  }
-
-  return -1;
+int switch_ap_channel(char *ifname,int channel) {
+	int ret_val;
+	char chan[2];
+	sprintf( chan, "%d", channel );
+	char *args[]={ifname,"set","channel",chan};
+	char *string="/usr/sbin/iw";
+	char *env[]={(char*)0};
+	ret_val=execve(string,args,env);
+	return ret_val;
 }
 
 int main(int argc, char **argv)
 {
 	int skfd;
-	if((skfd=sockets_open())<0){
+	if((skfd=iw_sockets_open())<0){
 			perror("socket");
 			return -1;
 	}
-	channel_selection(skfd,"wlan1");
+	channel_selection(skfd,"wlan1","wlan0");
 	switch_mode(skfd,"wlan1",2);
-	sockets_close(skfd);
+	iw_sockets_close(skfd);
 	return (0);
 }
