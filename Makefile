@@ -1,8 +1,11 @@
-CC=gcc
-CFLAGS=-c -Wall 
-LDFLAGS=-L/lib -liw -lpcap
-PROGS=chswi
+EXECUTABLE=chswi
+SOURCES=chswi.c
+CFLAGS = -c -Wall 
+LDFLAGS = -s  -liw -lpcap
+LIBS = -liw -lpcap
 XCFLAGS = $(A_SUPPORT_FLAG)
+
+OBJECTS=chswi.o
 
 #BUILD_PROTOA_SUPPORT = y
 
@@ -10,11 +13,13 @@ ifdef BUILD_PROTOA_SUPPORT
   A_SUPPORT_FLAG = -DSUPPORT_802_11_A
 endif 
 
-all:  chswio
-	gcc -g -o chswi  chswi.o $(LDFLAGS)
+all:  $(SOURCES) $(EXECUTABLE)
 
-chswio: 
-	$(CC) $(CFLAGS) $(XCFLAGS) $(LDFLAGS) chswi.c
-	
+$(EXECUTABLE) :  chswi.h chswi.o
+	$(CC) $(LDFLAGS) $(OBJECTS) $(LIBS) -o $@
+
+.c.o:
+	$(CC) $(XCFLAGS) $(CFLAGS) $< -o $@
+
 clean:
-	rm -rf *.o $(PROGS)
+	rm -rf *.o $(EXECUTABLE)

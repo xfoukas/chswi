@@ -26,25 +26,13 @@
 #define SUPPORT_802_11_BG "IEEE 802.11bg"
 
 #define MAX_RATE 54e6
-#define MIN_RATE (0.2*MAX_RATE)
+#define MIN_RATE (0.5*MAX_RATE)
 #define MIN_THRES MIN_RATE/MAX_RATE
 #define T_HOLD 10
 #define INITIAL_HOLD 1
 #define FILTER_CONSTANT ((float)T_HOLD/(T_HOLD+1))
 
-typedef struct apinf
-{
-	int has_ap;
-	wireless_config ap_config;
-	iwqual ap_quality;
-	struct apinf *next;
-} ap_info;
 
-typedef struct scanresult
-{
-	ap_info *ap_lists;
-	int num_of_channels;    /*Number of channels checked*/
-} scan_result;
 
 typedef struct chanload
 {
@@ -64,9 +52,7 @@ typedef struct chlist
 	unsigned short num_of_channels;
 }channel_list;
 
-int sockets_open(void);
 
-int ap_scan(int skfd,char *ifname,scan_result *lst);
 
 float get_channel_load(int skfd,const char *ifname,unsigned int timeslot);
 
@@ -83,34 +69,30 @@ int switch_channel(int skfd,const char *ifname, int channel);
 
 int is_outdated(channel_list *lst);
 
-void channel_selection(int skfd,const char *ifname,char *ap_ifname);
+void channel_selection(int skfd,const char *ifname);
 
 int switch_ap_channel(char *ifname,int channel);
 
 channel_load* find_oldest(channel_list *lst);
 
 void find_less_congested(channel_list *lst,channel_load **less_cong,
-		channel_load **second_less);
+		float * second_less);
 
 int get_range_info(int		skfd, const char *	ifname,
 		  iwrange *	range);
 
+static int channel_support(float freq,int supports_a);
 
-static inline int channel_support(float freq,int supports_a){
-	int divisor;
-	float nfreq;
-	if(freq>=GIGA)
-		divisor=GIGA;
-	else
-		divisor=-1;
-	nfreq=freq/divisor;
-	if(nfreq>=2.4&&nfreq<2.5)
-		return (1);
-	else if(supports_a==1&&nfreq>5&&nfreq<5.7)
-		return (1);
-	return (-1);
+static int
+print_info(int skfd, char * ifname, char * args[], int count);
+
+static int
+get_info(int skfd, char * ifname, struct wireless_info * info);
+
+static inline void display_info(struct wireless_info *	info, char * ifname)
+{
+  printf("%-8.16s  %s  \n\n", ifname, info->b.name);
 }
-
 
 inline void
 got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){

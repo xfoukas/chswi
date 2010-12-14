@@ -14,8 +14,8 @@ pcap_t *handle;
 
 void terminate_monitor(int signum)
 {
-   pcap_breakloop(handle);
-   pcap_close(handle);
+		pcap_breakloop(handle);
+		pcap_close(handle);
 }
 
 
@@ -80,6 +80,22 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 	return (1);
 }
 
+static int channel_support(float freq,int supports_a){
+	int divisor;
+	float nfreq;
+	if(freq>=GIGA)
+		divisor=GIGA;
+	else
+		divisor=-1;
+	nfreq=freq/divisor;
+	if(nfreq>=2.4&&nfreq<2.5)
+		return (1);
+	else if(supports_a==1&&nfreq>5&&nfreq<5.7)
+		return (1);
+	return (-1);
+}
+
+
 int switch_channel(int skfd,const char *ifname,int channel){
 	struct iwreq wrq;
 	int res;
@@ -87,7 +103,6 @@ int switch_channel(int skfd,const char *ifname,int channel){
 	wrq.u.freq.e = (double) 0;
 	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
 	if(ioctl(skfd,SIOCSIWFREQ,&wrq)<0){
-//	if(iw_set_ext(skfd, ifname, SIOCSIWFREQ, &wrq) < 0) {
 		fprintf(stderr, "SIOCSIWFREQ: %s\n", strerror(errno));
 		res=-1;
 	}else
@@ -146,7 +161,6 @@ int switch_mode(int skfd,const char *ifname,int mode)
 	wrq.u.mode=mode;
 	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
 	res=ioctl(skfd,SIOCSIWMODE,&wrq);
-//	res=iw_set_ext(skfd,ifname,SIOCSIWMODE,&wrq);
 	if_up_down(skfd,ifname,IFF_UP);
 	/*mode change failed but we first had to bring
 		the interface back up*/
@@ -203,29 +217,31 @@ channel_load* find_oldest(channel_list *lst)
 }
 
 void find_less_congested(channel_list *lst,channel_load **less_cong,
-		channel_load **second_less)
+		float *second_less)
 {
 	int i;
 	float second_less_load=1;
 	*less_cong=lst->channels;
-	*second_less=NULL;
 	for(i=0;i<lst->num_of_channels;i++){
 		if(lst->channels[i].load<(*less_cong)->load)
 			*less_cong=&(lst->channels[i]);
 		if(lst->channels[i].load<second_less_load
 				&&lst->channels[i].load!=0){
-			*second_less=&(lst->channels[i]);
+			*second_less=lst->channels[i].load;
 			second_less_load=lst->channels[i].load;
 		}
 	}
+	if(*second_less==(*less_cong)->load)
+		*second_less=MIN_THRES;
 }
 
 
-void channel_selection(int skfd,const char *ifname,char *ap_ifname)
+void channel_selection(int skfd,const char *ifname)
 {
 	channel_list lst;
-	channel_load ch,*less_cong,*second_less;
+	channel_load *ch,*less_cong;
 	channel_load *ch_old;
+	float second_less;
 	float curr_thres,chan_load,load_total,rnd;
 	float *total_so_far;
 	int curr_channel,i;
@@ -243,7 +259,6 @@ void channel_selection(int skfd,const char *ifname,char *ap_ifname)
 		}
 	}
 	srand(time(NULL));
-//	curr_channel=(rand()%(lst.num_of_channels-1))+1;
 	rnd=(rand()/(RAND_MAX+1.0))*load_total;
 	i=0;
 	for(;i<lst.num_of_channels;i++){
@@ -251,72 +266,114 @@ void channel_selection(int skfd,const char *ifname,char *ap_ifname)
 			break;
 	}
 	curr_channel=lst.channels[i].channel;
-	ch=lst.channels[i];
+	ch=&(lst.channels[i]);
 	free(total_so_far);
 	switch_channel(skfd,ifname,curr_channel);
-	switch_ap_channel(ap_ifname,curr_channel);
 	/*TODO must change interface of ap also*/
 	printf("Switched to channel %d\n",curr_channel);
-/*	for(i=0;i<lst.num_of_channels;i++){
-		if(lst.channels[i].has_channel==1){
-			if(lst.channels[i].channel==curr_channel){
-				ch=lst.channels[i];
-				break;
-			}
-		}
-	}*/
 	while(1){
 		chan_load=get_channel_load(skfd,ifname,T_HOLD);
-		ch.measure_time=time(NULL);
-		ch.load=((1-FILTER_CONSTANT)*chan_load)+
-				((FILTER_CONSTANT)*ch.load);
-		printf("Channel load %f\n",ch.load);
-		printf("Current load %f\n",curr_thres);
-		if(ch.load>curr_thres){
+		ch->measure_time=time(NULL);
+		ch->load=((1-FILTER_CONSTANT)*chan_load)+
+				((FILTER_CONSTANT)*(ch->load));
+		printf("Current channel load %f\n",ch->load);
+		/*printf("Current load %f\n",curr_thres);*/
+		if(ch->load>curr_thres){
 			if(is_outdated(&lst)){
 				ch_old=find_oldest(&lst);
 				curr_channel=ch_old->channel;
-				ch=*ch_old;
+				ch=ch_old;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel old%d\n",curr_channel);
-				switch_ap_channel(ap_ifname,curr_channel);
 				/*TODO must change interface of ap also*/
 				curr_thres=MIN_THRES;
 			} else{
 				find_less_congested(&lst,&less_cong,&second_less);
 				printf("Less cong %d\n",less_cong->channel);
 				curr_channel=less_cong->channel;
-				ch=*less_cong;
+				ch=less_cong;
 				switch_channel(skfd,ifname,curr_channel);
 				printf("Switched to channel not old %d\n",curr_channel);
-				switch_ap_channel(ap_ifname,curr_channel);
 				/*TODO must change interface of ap also*/
-				curr_thres=second_less->load;
+				curr_thres=second_less;
 			}
 		}
 	}
 }
 
-int switch_ap_channel(char *ifname,int channel) {
-	int ret_val;
-	char chan[2];
-	sprintf( chan, "%d", channel );
-	char *args[]={ifname,"set","channel",chan};
-	char *string="/usr/sbin/iw";
-	char *env[]={(char*)0};
-	ret_val=execve(string,args,env);
-	return ret_val;
+static int
+get_info(int			skfd,
+	 char *			ifname,
+	 struct wireless_info *	info)
+{
+  memset((char *) info, 0, sizeof(struct wireless_info));
+
+  /* Get basic information */
+  if(iw_get_basic_config(skfd, ifname, &(info->b)) < 0)
+    {
+      /* If no wireless name : no wireless extensions */
+      /* But let's check if the interface exists at all */
+      struct ifreq ifr;
+
+      strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+      if(ioctl(skfd, SIOCGIFFLAGS, &ifr) < 0)
+	return(-ENODEV);
+      else
+	return(-ENOTSUP);
+    }
+
+  return(0);
+}
+
+
+
+static int
+print_info(int		skfd,
+	   char *	ifname,
+	   char *	args[],
+	   int		count)
+{
+  struct wireless_info	info;
+  int			rc;
+
+  /* Avoid "Unused parameter" warning */
+  args = args; count = count;
+
+  rc = get_info(skfd, ifname, &info);
+  switch(rc)
+    {
+    case 0:	/* Success */
+      /* Display it ! */
+      display_info(&info, ifname);
+      break;
+
+    case -ENOTSUP:
+      fprintf(stderr, "%-8.16s  no wireless extensions.\n\n",
+	      ifname);
+      break;
+
+    default:
+      fprintf(stderr, "%-8.16s  %s\n\n", ifname, strerror(-rc));
+    }
+  return(rc);
 }
 
 int main(int argc, char **argv)
 {
 	int skfd;
 	if((skfd=iw_sockets_open())<0){
-			perror("socket");
-			return -1;
+		perror("socket");
+		return -1;
 	}
-	channel_selection(skfd,"wlan1","wlan0");
-	switch_mode(skfd,"wlan1",2);
+	if(argc==2){
+		channel_selection(skfd,argv[1]);
+		switch_mode(skfd,argv[1],2);
+	}
+	else {
+		fprintf(stdout, "\nUsage: chswi [Monitoring interface]\n\n");
+		fprintf(stdout,"Available interfaces:\n\n");
+		iw_enum_devices(skfd,&print_info,NULL,0);
+	}
 	iw_sockets_close(skfd);
 	return (0);
 }
