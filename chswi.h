@@ -25,6 +25,8 @@
 
 #define SUPPORT_802_11_BG "IEEE 802.11bg"
 
+#define WIRELESS_CONFIG "/etc/config/wireless"
+
 #define MAX_RATE 54e6
 #define MIN_RATE (0.5*MAX_RATE)
 #define MIN_THRES MIN_RATE/MAX_RATE
@@ -69,9 +71,9 @@ int switch_channel(int skfd,const char *ifname, int channel);
 
 int is_outdated(channel_list *lst);
 
-void channel_selection(int skfd,const char *ifname);
+void channel_selection(int skfd,const char *ifname,const char *master, const char *physical);
 
-int switch_ap_channel(char *ifname,int channel);
+int switch_ap_channel(const char *physical_dev, int channel);
 
 channel_load* find_oldest(channel_list *lst);
 

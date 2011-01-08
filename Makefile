@@ -1,7 +1,7 @@
 EXECUTABLE=chswi
 SOURCES=chswi.c
-CFLAGS = -c -Wall 
-LDFLAGS = -s  -liw -lpcap
+#CFLAGS = -c -Wall 
+LDFLAGS += -s 
 LIBS = -liw -lpcap
 XCFLAGS = $(A_SUPPORT_FLAG)
 
@@ -15,11 +15,11 @@ endif
 
 all:  $(SOURCES) $(EXECUTABLE)
 
-$(EXECUTABLE) :  chswi.h chswi.o
+$(EXECUTABLE) :  $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(LIBS) -o $@
 
 .c.o:
-	$(CC) $(XCFLAGS) $(CFLAGS) $< -o $@
+	$(CC) $(XCFLAGS) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf *.o $(EXECUTABLE)

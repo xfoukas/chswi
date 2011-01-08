@@ -95,6 +95,60 @@ static int channel_support(float freq,int supports_a){
 	return (-1);
 }
 
+int switch_ap_channel(const char *physical_dev, int channel){
+  FILE *fp, *out;
+  char buff[1024];
+  char new_buff[1024];
+  char *s;
+  int id;
+  size_t len=0;
+  int dev_found=0;
+  if((fp = fopen(WIRELESS_CONFIG,"r")) == NULL) {
+    fprintf(stderr,"Could not open file %s\n",WIRELESS_CONFIG);
+    return -1;
+  }
+  out = fopen("/tmp/wireless","w");
+  while(fgets(buff,sizeof(buff),fp)){
+    /*Check to see if we get in a physical device config block*/
+    s=strstr(buff, "wifi-device");
+    if(s!=NULL){
+      strcpy(new_buff,buff);
+      /*Check if we are in the right device*/
+      s=strstr(buff, physical_dev);
+      if(s!=NULL)
+    	  dev_found=1;
+      else
+    	  dev_found=0;
+    } else {
+      /*Check if we are in a channel config*/
+      s=strstr(buff, "channel");
+      if(s!=NULL && dev_found==1) {
+    	  sprintf(new_buff,"\toption \'channel\' \'%d\'\n",channel);
+      }
+      else
+    	  strcpy(new_buff,buff);
+    }
+    fputs(new_buff,out);
+  }
+  fclose(fp);
+  fclose(out);
+  fp=fopen("/tmp/wireless","r");
+  if(fp==NULL)
+	  return -1;
+  out=fopen(WIRELESS_CONFIG,"w");
+  if(out == NULL)
+	  return -1;
+  while(fgets(buff,sizeof(buff),fp))
+	  fputs(buff,out);
+  fclose(fp) ;
+  fclose(out) ;
+  id=fork();
+  if(id!=0)
+	  wait();
+  else
+	  execv("/sbin/wifi",NULL);
+  return 1;
+}
 
 int switch_channel(int skfd,const char *ifname,int channel){
 	struct iwreq wrq;
@@ -236,7 +290,7 @@ void find_less_congested(channel_list *lst,channel_load **less_cong,
 }
 
 
-void channel_selection(int skfd,const char *ifname)
+void channel_selection(int skfd,const char *ifname,const char *master, const char *physical)
 {
 	channel_list lst;
 	channel_load *ch,*less_cong;
@@ -246,7 +300,9 @@ void channel_selection(int skfd,const char *ifname)
 	float *total_so_far;
 	int curr_channel,i;
 	load_total=0;
+	if_up_down(skfd,master,-IFF_UP);
 	get_initial_load(skfd,ifname,INITIAL_HOLD,&lst);
+	if_up_down(skfd,master,IFF_UP);
 	total_so_far=malloc(lst.num_of_channels*sizeof(float));
 	curr_thres=MIN_THRES;
 	for(i=0;i<lst.num_of_channels;i++){
@@ -268,7 +324,7 @@ void channel_selection(int skfd,const char *ifname)
 	curr_channel=lst.channels[i].channel;
 	ch=&(lst.channels[i]);
 	free(total_so_far);
-	switch_channel(skfd,ifname,curr_channel);
+	switch_ap_channel(physical,curr_channel);
 	/*TODO must change interface of ap also*/
 	printf("Switched to channel %d\n",curr_channel);
 	while(1){
@@ -283,7 +339,7 @@ void channel_selection(int skfd,const char *ifname)
 				ch_old=find_oldest(&lst);
 				curr_channel=ch_old->channel;
 				ch=ch_old;
-				switch_channel(skfd,ifname,curr_channel);
+				switch_ap_channel(physical,curr_channel);
 				printf("Switched to channel old%d\n",curr_channel);
 				/*TODO must change interface of ap also*/
 				curr_thres=MIN_THRES;
@@ -292,7 +348,7 @@ void channel_selection(int skfd,const char *ifname)
 				printf("Less cong %d\n",less_cong->channel);
 				curr_channel=less_cong->channel;
 				ch=less_cong;
-				switch_channel(skfd,ifname,curr_channel);
+				switch_ap_channel(physical,curr_channel);
 				printf("Switched to channel not old %d\n",curr_channel);
 				/*TODO must change interface of ap also*/
 				curr_thres=second_less;
@@ -365,12 +421,12 @@ int main(int argc, char **argv)
 		perror("socket");
 		return -1;
 	}
-	if(argc==2){
-		channel_selection(skfd,argv[1]);
-		switch_mode(skfd,argv[1],2);
+	if(argc==4){
+	  channel_selection(skfd,argv[2],argv[1],argv[3]);
+			    /*switch_mode(skfd,argv[1],2);*/
 	}
 	else {
-		fprintf(stdout, "\nUsage: chswi [Monitoring interface]\n\n");
+		fprintf(stdout, "\nUsage: chswi [Master mode Interface] [Monitoring interface] [Physical Device]\n\n");
 		fprintf(stdout,"Available interfaces:\n\n");
 		iw_enum_devices(skfd,&print_info,NULL,0);
 	}
