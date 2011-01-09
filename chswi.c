@@ -414,19 +414,70 @@ print_info(int		skfd,
   return(rc);
 }
 
+int read_config(char *ap_iface,char *m_iface, char *phy_dev){
+	FILE *conf;
+	char buff[1024];
+	char *start;
+	char *config;
+	char *token[2];
+	char *def_ap_iface="wlan0";
+	char *def_m_iface="mon.wlan0";
+	char *def_phy_dev="radio0";
+
+	/*Give default values*/
+	strcpy(ap_iface,def_ap_iface);
+	strcpy(m_iface,def_m_iface);
+	strcpy(phy_dev,def_phy_dev);
+
+	if((conf = fopen(CONFIG_FILE,"r")) == NULL) {
+	    fprintf(stderr,"Could not open configuration file %s\n",CONFIG_FILE);
+	    return -1;
+	}
+	while(fgets(buff,sizeof(buff),conf)){
+		start=buff;
+		/*Remove whitespace until first character*/
+		while(isspace(*start)) start++;
+		if(*start == 0 || *start == '#')
+			continue;
+		config=strdup(start);
+		token[0]=strtok(config," ");
+		token[1]=strtok(NULL,"\n");
+		if(token[1]==NULL)
+			return -1;
+		if(strcmp(token[0],"physical_dev")==0)
+			strcpy(phy_dev,token[1]);
+		else if(strcmp(token[0],"monitor_iface")==0)
+			strcpy(m_iface,token[1]);
+		else if(strcmp(token[0],"master_iface")==0)
+			strcpy(ap_iface,token[1]);
+	}
+	free(config);
+	return 1;
+}
+
 int main(int argc, char **argv)
 {
 	int skfd;
+	char master[16];
+	char monitor[16];
+	char physical[16];
+
 	if((skfd=iw_sockets_open())<0){
 		perror("socket");
 		return -1;
 	}
-	if(argc==4){
+	if(argc==1){
+		if(read_config(master,monitor,physical)==1)
+			channel_selection(skfd,monitor,master,physical);
+		else
+			fprintf(stderr, "\nError reading configurations\n\n");
+	}
+	else if(argc==4){
 	  channel_selection(skfd,argv[2],argv[1],argv[3]);
 			    /*switch_mode(skfd,argv[1],2);*/
 	}
 	else {
-		fprintf(stdout, "\nUsage: chswi [Master mode Interface] [Monitoring interface] [Physical Device]\n\n");
+		fprintf(stdout, "\nUsage: chswi [[Master mode Interface] [Monitoring interface] [Physical Device]]\n\n");
 		fprintf(stdout,"Available interfaces:\n\n");
 		iw_enum_devices(skfd,&print_info,NULL,0);
 	}

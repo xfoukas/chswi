@@ -34,7 +34,7 @@
 #define INITIAL_HOLD 1
 #define FILTER_CONSTANT ((float)T_HOLD/(T_HOLD+1))
 
-
+#define CONFIG_FILE "/etc/chswi.conf"
 
 typedef struct chanload
 {
@@ -82,6 +82,8 @@ void find_less_congested(channel_list *lst,channel_load **less_cong,
 
 int get_range_info(int		skfd, const char *	ifname,
 		  iwrange *	range);
+
+int read_config(char *ap_iface,char *m_iface, char *phy_dev);
 
 static int channel_support(float freq,int supports_a);
 

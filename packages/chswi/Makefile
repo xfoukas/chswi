@@ -14,6 +14,9 @@ define Package/$(PKG_NAME)
 	DEPENDS:=+libpcap +libiw
 endef
 
+define Package/$(PKG_NAME)/conffiles
+/etc/chswi.conf
+endef
 
 MAKE_FLAGS += \
        CC="$(TARGET_CC)" \
@@ -35,6 +38,8 @@ endef
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/$(PKG_NAME) $(1)/bin/
+	$(INSTALL_DIR) $(1)/etc
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/chswi.conf $(1)/etc/chswi.conf
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
