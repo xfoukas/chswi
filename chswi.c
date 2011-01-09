@@ -6,29 +6,41 @@
  *      		p3070185@dias.aueb.gr
  */
 
+/******************************** INCLUDES ***********************************/
+
 #include <err.h>
 #include "chswi.h"
 
+/******************************* VARIABLES **********************************/
 
-pcap_t *handle;
+pcap_t * handle;	/* Handle for monitoring wireless channels */
 
+/****************************** SUBROUTINES *********************************/
+
+/* Callback function for terminating packet monitoring */
 void terminate_monitor(int signum)
 {
 		pcap_breakloop(handle);
 		pcap_close(handle);
 }
 
-
-int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
+/* Get the initial load of every supported channel
+ * by monitoring them for a predefined ammount of time
+ */
+int get_initial_load(int skfd, const char * ifname,
+						int timeslot, channel_list * lst)
 {
 	int supports_a=0;
 	int supports_bg=0;
 	int i;
-	channel_load *prev;
+	channel_load * prev;
 	struct iw_range range;
 
+	/* Check what types of protocols are supported */
+
 	if(check_proto_support(skfd,ifname,SUPPORT_802_11_BG)!=1) {
-		fprintf(stderr,"Protocol %s is not supported",SUPPORT_802_11_BG);
+		fprintf(stderr,"Protocol %s is not supported",
+							SUPPORT_802_11_BG);
 		return (-1);
 	} else
 		supports_bg=1;
@@ -36,17 +48,24 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 	if(check_proto_support(skfd,ifname,SUPPORT_802_11A)==1)
 		supports_a=1;
 
-	/*Find available channels*/
+	/* Find available channels */
+
 	if(iw_get_range_info(skfd,ifname,&range)<0) {
 		 fprintf(stderr, "%-8.16s  no frequency information.\n\n",
 				      ifname);
 		 return (-1);
 	}
 	else
-	lst->num_of_channels=0;
+		lst->num_of_channels=0;
+
+	/* Allocate memory for channel information gathering */
+
 	lst->channels=malloc(range.num_channels*sizeof(channel_load));
 	memset(lst->channels,0,range.num_channels*sizeof(channel_load));
 
+	/* Initialize static information about channels
+	 * (Frequency, channel number) and create a linked list
+	 */
 
 	for(i=0;i<range.num_channels;i++){
 		if(channel_support(iw_freq2float(&(range.freq[i])),supports_a)==1){
@@ -67,6 +86,10 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 	lst->channels=realloc(lst->channels,
 			(lst->num_of_channels)*sizeof(channel_load));
 
+	/* Monitor each channel to get the current channel load
+	 * and the time of the measurement
+	 */
+
 	for(i=0;i<lst->num_of_channels;i++){
 		if(lst->channels[i].has_channel) {
 			if(switch_channel(skfd,ifname,lst->channels[i].channel)==-1){
@@ -80,7 +103,9 @@ int get_initial_load(int skfd,const char *ifname,int timeslot,channel_list *lst)
 	return (1);
 }
 
-static int channel_support(float freq,int supports_a){
+/* Check if the right channel frequencies are supported */
+static int channel_support(float freq, int supports_a)
+{
 	int divisor;
 	float nfreq;
 	if(freq>=GIGA)
@@ -95,7 +120,14 @@ static int channel_support(float freq,int supports_a){
 	return (-1);
 }
 
-int switch_ap_channel(const char *physical_dev, int channel){
+/* Switch the channel of both the master and the monitoring
+ * interface. In order to do this, configuration information
+ * must be changed in file "/etc/config/wireless". The interfaces
+ * must then be restarted. Could not find a more elegant solution
+ * on this one...
+ */
+int switch_ap_channel(const char * physical_dev, int channel)
+{
   FILE *fp, *out;
   char buff[1024];
   char new_buff[1024];
@@ -103,24 +135,30 @@ int switch_ap_channel(const char *physical_dev, int channel){
   int id;
   size_t len=0;
   int dev_found=0;
+
+  /* Store altered configurations in a temp file */
+
   if((fp = fopen(WIRELESS_CONFIG,"r")) == NULL) {
     fprintf(stderr,"Could not open file %s\n",WIRELESS_CONFIG);
     return -1;
   }
   out = fopen("/tmp/wireless","w");
   while(fgets(buff,sizeof(buff),fp)){
-    /*Check to see if we get in a physical device config block*/
+
+    /* Check to see if we get in a physical device config block */
     s=strstr(buff, "wifi-device");
     if(s!=NULL){
       strcpy(new_buff,buff);
-      /*Check if we are in the right device*/
+
+      /* Check if we are in the right device */
       s=strstr(buff, physical_dev);
       if(s!=NULL)
     	  dev_found=1;
       else
     	  dev_found=0;
     } else {
-      /*Check if we are in a channel config*/
+
+      /* Check if we are in a channel config */
       s=strstr(buff, "channel");
       if(s!=NULL && dev_found==1) {
     	  sprintf(new_buff,"\toption \'channel\' \'%d\'\n",channel);
@@ -132,6 +170,9 @@ int switch_ap_channel(const char *physical_dev, int channel){
   }
   fclose(fp);
   fclose(out);
+
+  /* Copy the configurations back in to the old file */
+
   fp=fopen("/tmp/wireless","r");
   if(fp==NULL)
 	  return -1;
@@ -142,6 +183,8 @@ int switch_ap_channel(const char *physical_dev, int channel){
 	  fputs(buff,out);
   fclose(fp) ;
   fclose(out) ;
+
+  /* Restart the interfaces by calling "/sbin/wifi" */
   id=fork();
   if(id!=0)
 	  wait();
@@ -150,7 +193,12 @@ int switch_ap_channel(const char *physical_dev, int channel){
   return 1;
 }
 
-int switch_channel(int skfd,const char *ifname,int channel){
+/* Switch the channel of the monitoring interface. To
+ * do so, all the other interfaces using the wireless
+ * card must be already down
+ */
+int switch_channel(int skfd, const char * ifname, int channel)
+{
 	struct iwreq wrq;
 	int res;
 	wrq.u.freq.m = (double) channel;
@@ -164,14 +212,16 @@ int switch_channel(int skfd,const char *ifname,int channel){
 	return res;
 }
 
-int check_proto_support(int skfd,const char *ifname,const char *proto)
+/* Check what types of protocols are supported by the wireless card */
+int check_proto_support(int skfd, const char * ifname,
+					const char * proto)
 {
 	struct iwreq wrq;
 	char name[IFNAMSIZ+1];
 
 	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
 	if(ioctl(skfd, SIOCGIWNAME, &wrq) < 0)
-		/*If no wireless name : no wireless extensions*/
+		/* If no wireless name : no wireless extensions */
 		return(-1);
 	else {
 		strncpy(name, wrq.u.name, IFNAMSIZ);
@@ -180,19 +230,24 @@ int check_proto_support(int skfd,const char *ifname,const char *proto)
 	return iw_protocol_compare(name,proto);
 }
 
-float get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
+/* Measure the channel utilization in the designated amount of time */
+float get_channel_load(int skfd, const char * ifname,
+				unsigned int timeslot)
 {
 	float load;
 	char errbuf[PCAP_ERRBUF_SIZE];
 	struct iwreq wrq;
 
 	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
-	/*Must be in monitor mode*/
+
+	/* Must be in monitor mode */
 	if(ioctl(skfd,SIOCGIWMODE,&wrq) >= 0){
 			if(wrq.u.mode!=6)
 				if (switch_mode(skfd,ifname,6)<0)
 					return (-1);
 	}
+
+	/* Capture all packets of channels for "timeslot" time */
 
 	load=0;
 	handle=pcap_open_live(ifname,BUFSIZ,1,1,NULL);
@@ -207,7 +262,8 @@ float get_channel_load(int skfd,const char *ifname,unsigned int timeslot)
 	return load;
 }
 
-int switch_mode(int skfd,const char *ifname,int mode)
+/* Switch interface mode */
+int switch_mode(int skfd, const char * ifname, int mode)
 {
 	struct iwreq wrq;
 	int res;
@@ -216,15 +272,20 @@ int switch_mode(int skfd,const char *ifname,int mode)
 	strncpy(wrq.ifr_name,ifname,IFNAMSIZ);
 	res=ioctl(skfd,SIOCSIWMODE,&wrq);
 	if_up_down(skfd,ifname,IFF_UP);
-	/*mode change failed but we first had to bring
-		the interface back up*/
+
+	/* Mode change failed but we first had to bring
+		the interface back up */
 	if(res<0)
 		return (-1);
 	return (0);
 }
 
+/* Bring an interface up or down. Must be careful
+ * because it can be used for wireless as well as
+ * wired interfaces...
+ */
 void
-if_up_down(int skfd,const char *vname, int value)
+if_up_down(int skfd, const char * vname, int value)
 {
 	struct ifreq ifreq;
 	u_short flags;
@@ -243,7 +304,11 @@ if_up_down(int skfd,const char *vname, int value)
 		err(EXIT_FAILURE, "SIOCSIFFLAGS");
 }
 
-int is_outdated(channel_list *lst)
+/* Check if one of the channel measurements
+ * was made (2*T_HOLD*number of channels) time
+ * ago
+ */
+int is_outdated(channel_list * lst)
 {
 	int i;
 	time_t now;
@@ -258,7 +323,10 @@ int is_outdated(channel_list *lst)
 	return 0;
 }
 
-channel_load* find_oldest(channel_list *lst)
+/* Find the channel that has not been measured for
+ * the longest amount of time
+ */
+channel_load * find_oldest(channel_list * lst)
 {
 	channel_load *oldest;
 	int i;
@@ -270,8 +338,11 @@ channel_load* find_oldest(channel_list *lst)
 	return oldest;
 }
 
-void find_less_congested(channel_list *lst,channel_load **less_cong,
-		float *second_less)
+/* Find the channel that is less congested as well as the amount
+ * of congestion in the second less congested channel
+ */
+void find_less_congested(channel_list * lst, channel_load ** less_cong,
+			float *second_less)
 {
 	int i;
 	float second_less_load=1;
@@ -289,8 +360,8 @@ void find_less_congested(channel_list *lst,channel_load **less_cong,
 		*second_less=MIN_THRES;
 }
 
-
-void channel_selection(int skfd,const char *ifname,const char *master, const char *physical)
+void channel_selection(int skfd, const char * ifname,
+			const char * master, const char * physical)
 {
 	channel_list lst;
 	channel_load *ch,*less_cong;
@@ -300,9 +371,20 @@ void channel_selection(int skfd,const char *ifname,const char *master, const cha
 	float *total_so_far;
 	int curr_channel,i;
 	load_total=0;
+
+	/* Bring master interface down, so you can use monitoring
+	 * interface to scan all available channels
+	 */
+
 	if_up_down(skfd,master,-IFF_UP);
 	get_initial_load(skfd,ifname,INITIAL_HOLD,&lst);
 	if_up_down(skfd,master,IFF_UP);
+
+	/* Choose one of the channels as a starting channel for
+	 * the master interface. Each channel has a weight depending
+	 * on the load that was measured. The less congested
+	 * channel is most likely to be selected
+	 */
 	total_so_far=malloc(lst.num_of_channels*sizeof(float));
 	curr_thres=MIN_THRES;
 	for(i=0;i<lst.num_of_channels;i++){
@@ -322,45 +404,70 @@ void channel_selection(int skfd,const char *ifname,const char *master, const cha
 			break;
 	}
 	curr_channel=lst.channels[i].channel;
+
 	ch=&(lst.channels[i]);
 	free(total_so_far);
 	switch_ap_channel(physical,curr_channel);
-	/*TODO must change interface of ap also*/
+#ifdef DEBUG
 	printf("Switched to channel %d\n",curr_channel);
+#endif
+	/* Do that forever */
+
 	while(1){
+
+		/* Monitor channel for T_HOLD seconds */
 		chan_load=get_channel_load(skfd,ifname,T_HOLD);
 		ch->measure_time=time(NULL);
+
+		/*Smooth current and previous measurements out */
 		ch->load=((1-FILTER_CONSTANT)*chan_load)+
 				((FILTER_CONSTANT)*(ch->load));
+#ifdef DEBUG
 		printf("Current channel load %f\n",ch->load);
-		/*printf("Current load %f\n",curr_thres);*/
+#endif
+
+		/* Check if a channel switch should occur */
 		if(ch->load>curr_thres){
+
+			/* If measurements are outdated choose
+			 * the oldest channel from the list
+			 * and set the threshold back to its
+			 * original value
+			 */
 			if(is_outdated(&lst)){
 				ch_old=find_oldest(&lst);
 				curr_channel=ch_old->channel;
 				ch=ch_old;
 				switch_ap_channel(physical,curr_channel);
+#ifdef DEBUG
 				printf("Switched to channel old%d\n",curr_channel);
-				/*TODO must change interface of ap also*/
+#endif
 				curr_thres=MIN_THRES;
+
+			/* Else choose the less congested channel and
+			 * set the threshold to the value of the second less
+			 * congested one
+			 */
 			} else{
 				find_less_congested(&lst,&less_cong,&second_less);
+#ifdef DEBUG
 				printf("Less cong %d\n",less_cong->channel);
+#endif
 				curr_channel=less_cong->channel;
 				ch=less_cong;
 				switch_ap_channel(physical,curr_channel);
+#ifdef DEBUG
 				printf("Switched to channel not old %d\n",curr_channel);
-				/*TODO must change interface of ap also*/
+#endif
 				curr_thres=second_less;
 			}
 		}
 	}
 }
 
-static int
-get_info(int			skfd,
-	 char *			ifname,
-	 struct wireless_info *	info)
+/* Get information about the designated interface */
+static int get_info(int	skfd, char * ifname,
+		struct wireless_info *	info)
 {
   memset((char *) info, 0, sizeof(struct wireless_info));
 
@@ -381,13 +488,9 @@ get_info(int			skfd,
   return(0);
 }
 
-
-
-static int
-print_info(int		skfd,
-	   char *	ifname,
-	   char *	args[],
-	   int		count)
+/* Print the information of the designated interface */
+static int print_info(int skfd, char * ifname,
+	   char * args[], int	count)
 {
   struct wireless_info	info;
   int			rc;
@@ -414,7 +517,9 @@ print_info(int		skfd,
   return(rc);
 }
 
-int read_config(char *ap_iface,char *m_iface, char *phy_dev){
+/* Read the configuration file to find the right interfaces */
+int read_config(char *ap_iface, char *m_iface, char *phy_dev)
+{
 	FILE *conf;
 	char buff[1024];
 	char *start;
@@ -424,7 +529,7 @@ int read_config(char *ap_iface,char *m_iface, char *phy_dev){
 	char *def_m_iface="mon.wlan0";
 	char *def_phy_dev="radio0";
 
-	/*Give default values*/
+	/* Give default values */
 	strcpy(ap_iface,def_ap_iface);
 	strcpy(m_iface,def_m_iface);
 	strcpy(phy_dev,def_phy_dev);
@@ -435,7 +540,7 @@ int read_config(char *ap_iface,char *m_iface, char *phy_dev){
 	}
 	while(fgets(buff,sizeof(buff),conf)){
 		start=buff;
-		/*Remove whitespace until first character*/
+		/* Remove whitespace until first character */
 		while(isspace(*start)) start++;
 		if(*start == 0 || *start == '#')
 			continue;
@@ -474,7 +579,6 @@ int main(int argc, char **argv)
 	}
 	else if(argc==4){
 	  channel_selection(skfd,argv[2],argv[1],argv[3]);
-			    /*switch_mode(skfd,argv[1],2);*/
 	}
 	else {
 		fprintf(stdout, "\nUsage: chswi [[Master mode Interface] [Monitoring interface] [Physical Device]]\n\n");
