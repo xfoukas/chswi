@@ -42,9 +42,9 @@
 #define INITIAL_HOLD 1
 
 /*Maximum accepted rate before changing channel*/
-#define MIN_RATE (0.5*MAX_RATE)
+#define MIN_RATE (0.4*MAX_RATE)
 #define MIN_THRES (MIN_RATE/MAX_RATE)
-#define FILTER_CONSTANT ((float)T_HOLD/(T_HOLD+1))
+#define FILTER_CONSTANT ((float)(T_HOLD-1)/T_HOLD)
 
 /************************** DEBUG ****************************/
 
